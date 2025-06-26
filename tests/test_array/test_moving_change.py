@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Test Suite for Functions in `moving` Module in `array` package.
+"""Test Suite for Change Functions in `moving` Module in `array` package.
 
-This module provides comprehensive test coverage for functions in
-`array.moving` module, which are processing moving operations over NumPy arrays.
+This module provides comprehensive test coverage for `change` and `pct_change`
+functions in `array.moving` module, which are processing moving change or
+change percentage operations over NumPy arrays.
 
 The test suite covers the following aspects:
 - Basic functionality and edge cases

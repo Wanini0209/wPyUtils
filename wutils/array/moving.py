@@ -1,28 +1,39 @@
 # -*- coding: utf-8 -*-
-"""A collection of utilities for processing moving operations over NumPy arrays.
+"""A collection of utilities for moving/rolling operations on NumPy arrays.
 
-This module provides a memory-efficient `MovingWindow` class for applying
-sliding window calculations (like mean, sum, std) on NumPy arrays without
-data duplication. It also includes standalone functions for calculating
-lagged changes (`change`, `pct_change`).
+This module provides a suite of tools for applying calculations over a
+moving window of an array. It is designed for time-series analysis and
+signal processing tasks.
+
+The module includes a memory-efficient `MovingWindow` class for generic
+rolling calculations, alongside specialized functions for common moving
+operations like lagged changes (`change`, `pct_change`) and exponential
+moving averages (`exponential_smoothing`, `ema`).
 
 Classes
 -------
-- MovingWindow: A class to create sliding window views and apply operations.
+- MovingWindow: A class to create sliding window views for efficient
+  rolling calculations without data duplication.
 
-Methods
--------
-- change: Calculates the difference between an element and a previous element.
-- pct_change: Calculates the percentage change between an element and a
-  previous element.
+Functions
+---------
+- change: Calculates the moving difference between an element and a
+  previous one.
+- pct_change: Calculates the moving percentage change between an element
+  and a previous one.
+- exponential_smoothing: A foundational function for moving averages that
+  applies exponential smoothing with a given factor (alpha).
+- ema: Calculates the Exponential Moving Average (EMA), a specific type
+  of exponential smoothing commonly used in financial technical indicators.
 
 created on Mon Jun 23 16:06:49 2025
 
 @author: WaNiNi
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
+import numba
 import numpy as np
 
 
@@ -649,3 +660,256 @@ def pct_change(
         return padded_result
 
     return result
+
+
+@numba.njit(cache=True)
+def _ema_numba_1d(values: np.ndarray, alpha: float, iv: float) -> np.ndarray:
+    """
+    Compute exponential moving average for 1D array using Numba JIT compilation.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Input 1D array.
+    alpha : float
+        Smoothing parameter (0 < alpha <= 1).
+    iv : float
+        Initial value.
+
+    Returns
+    -------
+    np.ndarray
+        Exponential moving average result.
+    """
+    ret = np.empty(values.shape, dtype=np.float64)
+
+    # Initialize first value
+    ret[0] = alpha * values[0] + (1 - alpha) * iv
+
+    # Compute EMA for remaining values
+    for idx in range(1, len(values)):
+        ret[idx] = alpha * values[idx] + (1 - alpha) * ret[idx - 1]
+
+    return ret
+
+
+@numba.njit(cache=True)
+def _ema_numba_2d(values: np.ndarray, alpha: float, iv: np.ndarray) -> np.ndarray:
+    """
+    Compute exponential moving average for 2D array using Numba JIT compilation.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Input 2D array with shape (n_timesteps, n_features).
+    alpha : float
+        Smoothing parameter (0 < alpha <= 1).
+    iv : np.ndarray
+        Initial values for each feature.
+
+    Returns
+    -------
+    np.ndarray
+        Exponential moving average result with same shape as input.
+    """
+    ret = np.empty(values.shape, dtype=np.float64)
+
+    # Initialize first row
+    ret[0] = alpha * values[0] + (1 - alpha) * iv
+
+    # Compute EMA for remaining rows
+    for i in range(1, len(values)):
+        for j in range(len(iv)):
+            ret[i, j] = alpha * values[i, j] + (1 - alpha) * ret[i - 1, j]
+
+    return ret
+
+
+def exponential_smoothing(
+    values: np.ndarray,
+    alpha: float,
+    iv: Optional[Union[float, np.ndarray]] = None,
+) -> np.ndarray:
+    """
+    Perform exponential smoothing on the first dimension of a given array.
+
+    The exponential moving average (EMA) is computed recursively as:
+        ema[t] = α * d[t] + (1-α) * ema[t-1]
+
+    Which can be expanded to:
+        ema[0] = (1-α) * iv + α * d[0]
+        ema[1] = (1-α)^2 * iv + α(1-α) * d[0] + α * d[1]
+        ...
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Input array. For 1D arrays, computes EMA directly.
+        For multi-dimensional arrays, computes EMA along the first axis.
+    alpha : float
+        Smoothing parameter, must satisfy 0 < alpha <= 1.
+        Higher values give more weight to recent observations.
+    iv : float or np.ndarray, optional
+        Initial value(s). If None, uses the first observation(s) as initial
+        value. For multi-dimensional arrays, can be a scalar (broadcast to all
+        features) or an array matching the shape of `values[0]`.
+
+    Returns
+    -------
+    np.ndarray
+        Exponentially smoothed array with the same shape as input.
+
+    Raises
+    ------
+    ValueError
+        If alpha is not in the range (0, 1].
+
+    See Also
+    --------
+    https://en.wikipedia.org/wiki/Exponential_smoothing
+
+    Examples
+    --------
+    Basic 1D example:
+
+    >>> values = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> exponential_smoothing(values, 1/3)
+    array([1.        , 1.33333333, 1.88888889, 2.59259259, 3.39506173,
+           4.26337449, 5.17558299, 6.11705533, 7.07803688, 8.05202459])
+
+    Multi-dimensional example:
+
+    >>> values = np.array([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]]).T
+    >>> exponential_smoothing(values, 1/3)
+    array([[1.        , 6.        ],
+           [1.33333333, 6.33333333],
+           [1.88888889, 6.88888889],
+           [2.59259259, 7.59259259],
+           [3.39506173, 8.39506173]])
+
+    With specified initial value:
+
+    >>> values = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> exponential_smoothing(values, 1/3, iv=0)
+    array([0.33333333, 0.88888889, 1.59259259, 2.39506173, 3.26337449,
+           4.17558299, 5.11705533, 6.07803688, 7.05202459, 8.03468306])
+    """
+    if not (0 < alpha <= 1):
+        raise ValueError(f"Parameter `alpha` must be in range (0, 1], got {alpha}")
+
+    if values.size == 0:
+        return values.copy()
+
+    # Set initial value if not provided
+    if iv is None:
+        iv = values[0]
+
+    # Handle multi-dimensional arrays
+    if values.ndim > 1:
+        # Broadcast initial value to match the shape of remaining dimensions
+        iv = np.broadcast_to(iv, values.shape[1:])
+
+        # Reshape for 2D processing and then reshape back
+        return _ema_numba_2d(
+            values.reshape(len(values), -1),
+            alpha,
+            iv.flatten()
+        ).reshape(values.shape)
+
+    # Handle 1D arrays
+    return _ema_numba_1d(values, alpha, float(iv))
+
+
+def ema(
+    values: np.ndarray,
+    period: int,
+    factor: int = 2,
+    iv: Optional[Union[float, np.ndarray]] = None,
+    keep_length: bool = False,
+) -> np.ndarray:
+    """
+    Perform EMA on the first dimension of a given array using period.
+
+    EMA is a specific type of exponential smoothing commonly used in financial
+    technical indicators. The smoothing factor alpha is calculated from the
+    period and an adjustment factor.
+        alpha = factor / (period + factor - 1)
+    A common setting in finance is `factor=2`.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Input array. Calculation is performed along the first axis.
+    period : int
+        The period for the EMA. Must be an integer greater than 1.
+    factor : int, default 2
+        The adjustment factor for calculating alpha. Must be >= 1.
+    iv : float or np.ndarray, optional
+        Initial value(s). If provided, the calculation starts from the first
+        element. If None (default), the simple moving average of the first
+        `period` elements is used as the initial value.
+    keep_length : bool, default False
+        If True, the output array will have the same length as the input
+        array, with `NaN` padding for the initial `period - 1` elements.
+        If False, the output will only contain valid EMA values, starting from
+        the `period-1`-th element.
+
+    Returns
+    -------
+    np.ndarray
+        The calculated EMA array. Its length depends on `keep_length`.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not > 1 or `factor` is not >= 1.
+
+    Examples
+    --------
+    >>> values = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    >>> # Using period=3, factor=2 (default) -> alpha = 2 / (3+2-1) = 0.5
+    >>> ema(values, 3)
+    array([2. ,3. ,4. ,5. ,6. , 7., 8., 9.])
+
+    >>> # With keep_length=True, the first 2 (period-1) values are NaN.
+    >>> ema(values, 3, keep_length=True)
+    array([nan, nan,  2.,  3.,  4.,  5.,  6.,  7.,  8.,  9.])
+
+    >>> # With a specified initial value, calculation starts from index 0.
+    >>> # Using period=5, factor=1 -> alpha = 1/5 = 0.2
+    >>> ema(values, 5, factor=1, iv=0)
+    array([0.2       , 0.56      , 1.048     , 1.6384    , 2.31072   ,
+           3.048576  , 3.8388608 , 4.67108864, 5.53687091, 6.42949673])
+    """
+    if not isinstance(period, int) or period <= 1:
+        raise ValueError(f"Parameter `period` must be an integer > 1, got {period}")
+    if not isinstance(factor, int) or factor < 1:
+        raise ValueError(f"Parameter `factor` must be an integer >= 1, got {factor}")
+
+    alpha = factor / (period + factor - 1)
+
+    if iv is not None:
+        return exponential_smoothing(values, alpha, iv=iv)
+
+    if len(values) < period:
+        if keep_length:
+            return np.full(values.shape, np.nan)
+        else:
+            return np.array([], dtype=float)
+
+    # Use the mean of the first `period` elements as the initial value.
+    iv = values[:period].mean(axis=0)
+    ret = np.empty(values.shape, dtype=float)
+
+    # The first EMA value is at index `period-1` and is the initial value itself.
+    ret[period - 1] = iv
+
+    # Calculate the rest of the EMA.
+    if len(values) > period:
+        ret[period:] = exponential_smoothing(values[period:], alpha, iv=iv)
+
+    if keep_length:
+        ret[:period - 1] = np.nan
+        return ret
+
+    return ret[period - 1:]
