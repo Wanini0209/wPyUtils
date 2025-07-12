@@ -1,0 +1,14 @@
+numpy==2.2.6
+numba==0.61.2
+flake8==7.2.0
+pylint==3.3.7
+mypy==1.16.1
+isort==6.0.1
+pytest==8.4.1
+pytest-cov==6.2.1
+pre-commit==4.2.0
+commitizen==4.8.3
+invoke==2.2.0
+bandit==1.8.5
+mkdocs==1.6.1
+black==25.1.0
