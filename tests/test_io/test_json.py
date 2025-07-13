@@ -8,6 +8,7 @@ Created on Mon Jun 23 14:32:55 2025
 @author: WaNiNi
 """
 
+import datetime
 import json
 import os
 import shutil
@@ -347,3 +348,193 @@ class TestJsonUtilsIntegration:
         # Verify second version
         assert json_load(filepath) == data2
         assert json_load(filepath) != data1
+
+
+# Tests: `json_dump` with `datetime` object support
+class TestJsonDumpDatetime:
+    """Test cases for `json_dump` with `datetime` object support."""
+
+    def test_dump_dict_with_date(self, tmp_path):
+        """Test dumping dictionary containing date objects."""
+        test_file = tmp_path / "test_date.json"
+        test_data = {
+            "name": "John",
+            "birth_date": datetime.date(1990, 5, 15),
+            "age": 33
+        }
+
+        json_dump(test_data, test_file)
+
+        # Verify file was created and contains expected data
+        assert test_file.exists()
+        with open(test_file, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+
+        expected = {
+            "name": "John",
+            "birth_date": "1990-05-15",
+            "age": 33
+        }
+        assert loaded_data == expected
+
+    def test_dump_dict_with_datetime(self, tmp_path):
+        """Test dumping dictionary containing datetime objects."""
+        test_file = tmp_path / "test_datetime.json"
+        test_data = {
+            "event": "Meeting",
+            "created_at": datetime.datetime(2023, 12, 25, 10, 30, 0),
+            "participants": ["Alice", "Bob"]
+        }
+
+        json_dump(test_data, test_file)
+
+        # Verify file was created and contains expected data
+        assert test_file.exists()
+        with open(test_file, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+
+        expected = {
+            "event": "Meeting",
+            "created_at": "2023-12-25T10:30:00",
+            "participants": ["Alice", "Bob"]
+        }
+        assert loaded_data == expected
+
+    def test_dump_list_with_mixed_datetime(self, tmp_path):
+        """Test dumping list containing mixed datetime objects."""
+        test_file = tmp_path / "test_mixed.json"
+        test_data = [
+            {
+                "date": datetime.date(2023, 1, 1),
+                "datetime": datetime.datetime(2023, 1, 1, 12, 0, 0),
+                "text": "New Year"
+            },
+            {
+                "date": datetime.date(2023, 12, 31),
+                "datetime": datetime.datetime(2023, 12, 31, 23, 59, 59),
+                "text": "Year End"
+            }
+        ]
+
+        json_dump(test_data, test_file)
+
+        # Verify file was created and contains expected data
+        assert test_file.exists()
+        with open(test_file, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+
+        expected = [
+            {
+                "date": "2023-01-01",
+                "datetime": "2023-01-01T12:00:00",
+                "text": "New Year"
+            },
+            {
+                "date": "2023-12-31",
+                "datetime": "2023-12-31T23:59:59",
+                "text": "Year End"
+            }
+        ]
+        assert loaded_data == expected
+
+    def test_dump_nested_datetime(self, tmp_path):
+        """Test dumping nested structures with datetime objects."""
+        test_file = tmp_path / "test_nested.json"
+        test_data = {
+            "user": {
+                "profile": {
+                    "created": datetime.datetime(2023, 1, 1, 10, 0, 0),
+                    "last_login": datetime.date(2023, 12, 25)
+                }
+            },
+            "events": [
+                {"timestamp": datetime.datetime(2023, 6, 15, 14, 30, 0)},
+                {"timestamp": datetime.datetime(2023, 6, 16, 9, 15, 30)}
+            ]
+        }
+
+        json_dump(test_data, test_file)
+
+        # Verify file was created and contains expected data
+        assert test_file.exists()
+        with open(test_file, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+
+        expected = {
+            "user": {
+                "profile": {
+                    "created": "2023-01-01T10:00:00",
+                    "last_login": "2023-12-25"
+                }
+            },
+            "events": [
+                {"timestamp": "2023-06-15T14:30:00"},
+                {"timestamp": "2023-06-16T09:15:30"}
+            ]
+        }
+        assert loaded_data == expected
+
+    def test_dump_regular_data_still_works(self, tmp_path):
+        """Test that regular JSON serialization still works."""
+        test_file = tmp_path / "test_regular.json"
+        test_data = {
+            "string": "hello",
+            "number": 42,
+            "boolean": True,
+            "null": None,
+            "array": [1, 2, 3],
+            "object": {"nested": "value"}
+        }
+
+        json_dump(test_data, test_file)
+
+        # Verify file was created and contains expected data
+        assert test_file.exists()
+        with open(test_file, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+
+        assert loaded_data == test_data
+
+
+# Integration test
+class TestJsonDumpDatetimeIntegration:
+    """Integration tests for `json_dump` datetime functionality."""
+
+    def test_roundtrip_datetime_serialization(self, tmp_path):
+        """Test that datetime objects can be serialized and timestamps preserved."""
+        test_file = tmp_path / "roundtrip.json"
+        original_data = {
+            "created_at": datetime.datetime(2023, 12, 25, 14, 30, 45),
+            "birth_date": datetime.date(1990, 5, 15),
+            "metadata": {
+                "last_updated": datetime.datetime(2023, 12, 26, 10, 15, 30)
+            }
+        }
+
+        # Serialize
+        json_dump(original_data, test_file)
+
+        # Load and verify structure is preserved
+        with open(test_file, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+
+        # Convert back to datetime objects for comparison
+        expected_data = {
+            "created_at": "2023-12-25T14:30:45",
+            "birth_date": "1990-05-15",
+            "metadata": {
+                "last_updated": "2023-12-26T10:15:30"
+            }
+        }
+
+        assert loaded_data == expected_data
+
+        # Verify we can parse the ISO strings back to datetime
+        parsed_created = datetime.datetime.fromisoformat(loaded_data["created_at"])
+        parsed_birth = datetime.date.fromisoformat(loaded_data["birth_date"])
+        parsed_updated = datetime.datetime.fromisoformat(
+            loaded_data["metadata"]["last_updated"])
+
+        assert parsed_created == original_data["created_at"]
+        assert parsed_birth == original_data["birth_date"]
+        assert parsed_updated == original_data["metadata"]["last_updated"]

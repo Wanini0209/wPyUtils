@@ -11,15 +11,54 @@ Created on Mon Jun 23 14:18:04 2025
 @author: WaNiNi
 """
 
+import datetime
 import json
 import os
 from typing import Any, Optional, Union
+
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code.
+
+    This function handles custom serialization for datetime objects that
+    are not natively supported by the standard json module.
+
+    Parameters
+    ----------
+    obj : Any
+        The object to serialize
+
+    Returns
+    -------
+    str
+        ISO format string representation of datetime objects
+
+    Raises
+    ------
+    TypeError
+        If object type is not supported for serialization
+
+    Examples
+    --------
+    >>> import datetime
+    >>> json_serial(datetime.date(2023, 1, 1))
+    '2023-01-01'
+    >>> json_serial(datetime.datetime(2023, 1, 1, 12, 30, 45))
+    '2023-01-01T12:30:45'
+    """
+    if isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
+    raise TypeError("Type %s not serializable" % type(obj))
 
 
 def json_dump(obj: Any, filepath: Union[str, os.PathLike],
               indent: Optional[int] = 4, ensure_ascii: bool = False,
               encoding: str = 'utf-8') -> None:
     """Save object to JSON file.
+
+    This function serializes Python objects to JSON format and saves them
+    to a file. It includes built-in support for `datetime` objects which
+    are automatically converted to ISO format strings
 
     Parameters
     ----------
@@ -41,8 +80,19 @@ def json_dump(obj: Any, filepath: Union[str, os.PathLike],
     IOError
         If file cannot be written
 
+    Examples
+    --------
+    >>> import datetime
+    >>> data = {
+    ...     'name': 'John',
+    ...     'created_at': datetime.datetime.now(),
+    ...     'birth_date': datetime.date(1990, 1, 1)
+    ... }
+    >>> json_dump(data, 'output.json')
+
     See Also
     --------
+    json_serial : Custom serializer for datetime objects
     json_dump : Save object to JSON file
     """
     try:
@@ -50,7 +100,8 @@ def json_dump(obj: Any, filepath: Union[str, os.PathLike],
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
         with open(filepath, 'w', encoding=encoding) as f:
-            json.dump(obj, f, indent=indent, ensure_ascii=ensure_ascii)
+            json.dump(obj, f, default=json_serial,
+                      indent=indent, ensure_ascii=ensure_ascii)
     except TypeError as e:
         raise TypeError(f"Object is not JSON serializable: {e}")
     except IOError as e:
@@ -104,7 +155,8 @@ if __name__ == "__main__":
     sample_data = {
         "name": "WaNiNi",
         "project": "JSON Utils",
-        "date": "2025-06-23",
+        "date": datetime.date.today(),
+        "datetime": datetime.datetime.now(),
         "features": ["json_dump", "json_load"],
         "metadata": {
             "version": "1.0",
